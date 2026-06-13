@@ -1,0 +1,205 @@
+// ==========================================
+// FILENAME: BaseTest.java
+// ==========================================
+package com.amazon.qa.base;
+
+import java.time.Duration;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+public class BaseTest {
+    protected WebDriver driver;
+    protected WebDriverWait wait;
+
+    public void initialization() {
+        driver = new ChromeDriver();
+        driver.manage().window().maximize();
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(0));
+        wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.get("https://www.amazon.in");
+    }
+
+    public void tearDown() {
+        if (driver != null) driver.quit();
+    }
+}
+
+// ==========================================
+// FILENAME: ExcelUtil.java
+// ==========================================
+package com.amazon.qa.utils;
+
+import org.apache.poi.ss.usermodel.*;
+import java.io.FileInputStream;
+
+public class ExcelUtil {
+    public static String getSearchData(String path, String sheetName) {
+        try {
+            Workbook wb = WorkbookFactory.create(new FileInputStream(path));
+            Sheet sheet = wb.getSheet(sheetName);
+            return sheet.getRow(1).getCell(2).getStringCellValue();
+        } catch (Exception e) {
+            throw new RuntimeException("Excel Read Failed : " + e.getMessage());
+        }
+    }
+}
+
+// ==========================================
+// FILENAME: RetryAnalyzer.java
+// ==========================================
+package com.amazon.qa.retry;
+
+import org.testng.IRetryAnalyzer;
+import org.testng.ITestResult;
+
+public class RetryAnalyzer implements IRetryAnalyzer {
+    private int count = 0;
+    private static final int MAX_RETRY = 2;
+
+    public boolean retry(ITestResult result) {
+        if (count < MAX_RETRY) {
+            count++;
+            return true;
+        }
+        return false;
+    }
+}
+
+// ==========================================
+// FILENAME: AmazonHomePage.java
+// ==========================================
+package com.amazon.qa.pages;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.*;
+
+import java.time.Duration;
+
+public class AmazonHomePage {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private By searchBox = By.id("twotabsearchtextbox");
+    private By searchButton = By.id("nav-search-submit-button");
+
+    public AmazonHomePage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+    }
+
+    public void searchProduct(String product) {
+        wait.until(ExpectedConditions.visibilityOfElementLocated(searchBox)).sendKeys(product);
+        wait.until(ExpectedConditions.elementToBeClickable(searchButton)).click();
+    }
+}
+
+// ==========================================
+// FILENAME: SearchResultPage.java
+// ==========================================
+package com.amazon.qa.pages;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.*;
+import java.time.Duration;
+
+public class SearchResultPage {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private By firstProduct = By.xpath("(//span[contains(text(),'iPhone 12')])[1]");
+
+    public SearchResultPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+    }
+
+    public void openProduct() {
+        wait.until(ExpectedConditions.elementToBeClickable(firstProduct)).click();
+
+        for (String win : driver.getWindowHandles()) {
+            driver.switchTo().window(win);
+        }
+    }
+}
+
+// ==========================================
+// FILENAME: ProductPage.java
+// ==========================================
+package com.amazon.qa.pages;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.*;
+import java.time.Duration;
+
+public class ProductPage {
+
+    private WebDriver driver;
+    private WebDriverWait wait;
+
+    private By addToCartBtn = By.name("submit.add-to-cart");
+    private By cartConfirmation = By.xpath("//span[contains(text(),'Added to Cart')]");
+
+    public ProductPage(WebDriver driver) {
+        this.driver = driver;
+        this.wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+    }
+
+    public void addToCart() {
+        wait.until(ExpectedConditions.elementToBeClickable(addToCartBtn)).click();
+    }
+
+    public boolean verifyCart() {
+        return wait.until(ExpectedConditions.visibilityOfElementLocated(cartConfirmation)).isDisplayed();
+    }
+}
+
+// ==========================================
+// FILENAME: AmazonAddToCartTest.java
+// ==========================================
+package com.amazon.qa.tests;
+
+import org.testng.Assert;
+import org.testng.annotations.*;
+import com.amazon.qa.base.BaseTest;
+import com.amazon.qa.pages.*;
+import com.amazon.qa.retry.RetryAnalyzer;
+import com.amazon.qa.utils.ExcelUtil;
+
+public class AmazonAddToCartTest extends BaseTest {
+
+    @BeforeMethod
+    public void setup() {
+        initialization();
+    }
+
+    @Test(retryAnalyzer = RetryAnalyzer.class)
+    public void verifyIphone12AddToCart() {
+
+        try {
+            String product = ExcelUtil.getSearchData("TestData/Amazon_TestData.xlsx", "AmazonSearchData");
+
+            AmazonHomePage home = new AmazonHomePage(driver);
+            home.searchProduct(product);
+
+            SearchResultPage result = new SearchResultPage(driver);
+            result.openProduct();
+
+            ProductPage productPage = new ProductPage(driver);
+            productPage.addToCart();
+
+            Assert.assertTrue(productPage.verifyCart(),
+                    "Product was not added to cart");
+
+        } catch (Exception e) {
+            Assert.fail("Test Failed Due To Exception : " + e.getMessage());
+        }
+    }
+
+    @AfterMethod
+    public void closeBrowser() {
+        tearDown();
+    }
+}
